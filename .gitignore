@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Flask
+instance/
+.webassets-cache
+
+# Environment
+.env
+.env.local
+.flaskenv
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Chat history (可选：如果想在服务器保留聊天记录，删除这行)
+chat_history.json
+
+# Temporary files
+UPDATE_SUMMARY.md
+DESIGN_CHANGES.md
+QUICK_START.md
+INTEGRATION_COMPLETE.md
+QUICK_START_NOW.md
+SIMPLIFIED_INTEGRATION.md
+API_TEST_RESULTS.md
+
+# Next.js integration files (不需要部署)
+nextjs-integration/
+COPY_TO_NEXTJS/
+

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1v1 Tutoring Chat - BNBU EAP Teaching Assistant</title>
+    <script src="https://unpkg.byted-static.com/coze/space_ppt_lib/1.0.3-alpha.12/lib/tailwindcss.js"></script>
+    <script src="https://unpkg.byted-static.com/fortawesome/fontawesome-free/6.7.2/js/all.min.js" data-auto-replace-svg="nest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1B8C79',
+                        secondary: '#37436A', 
+                        accent: '#080D1E',
+                        'text-primary': '#1F2937',
+                        'text-secondary': '#6B7280',
+                        'bg-light': '#F9FAFB',
+                        'border-light': '#E5E7EB'
+                    },
+                    boxShadow: {
+                        'card': '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
+                        'card-hover': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .sidebar-transition {
+            transition: width 0.3s ease-in-out;
+        }
+        
+        .card-hover:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transform: translateY(-1px);
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .nav-item-active {
+            background-color: rgba(27, 140, 121, 0.1);
+            border-right: 3px solid #1B8C79;
+            color: #1B8C79;
+        }
+        
+        .chat-bubble-user {
+            background-color: #1B8C79;
+            color: white;
+            border-radius: 18px 18px 4px 18px;
+            margin-left: auto;
+            margin-right: 0;
+        }
+        
+        .chat-bubble-ai {
+            background-color: #F3F4F6;
+            color: #1F2937;
+            border-radius: 18px 18px 18px 4px;
+            margin-right: auto;
+            margin-left: 0;
+        }
+        
+        .typing-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #9CA3AF;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+            }
+            30% {
+                transform: translateY(-10px);
+            }
+        }
+    </style>
+</head>
+<body class="bg-bg-light min-h-screen">
+    <!-- Top Navigation Bar -->
+    <header id="top-nav" class="fixed top-0 left-0 right-0 bg-white border-b border-border-light h-16 z-50">
+        <div class="flex items-center justify-between h-full px-6">
+            <!-- Logo and Brand -->
+            <div id="brand-section" class="flex items-center space-x-4">
+                <div id="logo" class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+                    <i class="fas fa-graduation-cap text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 id="brand-title" class="text-xl font-bold text-text-primary">BNBU EAP</h1>
+                    <p id="brand-subtitle" class="text-xs text-text-secondary">Teaching Assistant</p>
+                </div>
+            </div>
+            
+            <!-- Search Bar -->
+            <div id="search-section" class="flex-1 max-w-md mx-8">
+                <div class="relative">
+                    <input 
+                        type="text" 
+                        id="global-search" 
+                        placeholder="Search materials, sessions..." 
+                        class="w-full pl-10 pr-4 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    >
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary"></i>
+                </div>
+            </div>
+            
+            <!-- User Actions -->
+            <div id="user-actions" class="flex items-center space-x-4">
+                <!-- User Profile -->
+                <div id="user-profile" class="relative">
+                    <button id="user-menu-btn" class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
+                            <i class="fas fa-user text-white text-sm"></i>
+                        </div>
+                        <span class="text-sm font-medium text-text-primary">{{ user_info.email if user_info else 'User' }}</span>
+                        <i class="fas fa-chevron-down text-xs text-text-secondary"></i>
+                    </button>
+                    <!-- Dropdown Menu -->
+                    <div id="user-dropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-border-light">
+                        <div class="py-1">
+                            <a href="{{ url_for('logout') }}" class="block px-4 py-2 text-sm text-text-primary hover:bg-gray-50">
+                                <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-16 bottom-0 w-64 bg-white border-r border-border-light sidebar-transition z-40">
+        <nav id="sidebar-nav" class="p-4 space-y-2">
+            <!-- 1v1 Tutoring -->
+            <a href="#" id="nav-tutoring" class="nav-item-active flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors">
+                <i class="fas fa-comments w-5"></i>
+                <span>1v1 Tutoring</span>
+            </a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main id="main-content" class="ml-64 mt-16 flex flex-col h-screen">
+        <!-- Page Header -->
+        <div id="page-header" class="bg-white border-b border-border-light px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <nav id="breadcrumb" class="text-sm text-text-secondary mb-1">
+                        <span>Home</span>
+                        <span class="mx-2">/</span>
+                        <span>1v1 Tutoring</span>
+                        <span class="mx-2">/</span>
+                        <span>Chat</span>
+                    </nav>
+                    <h1 id="page-title" class="text-xl font-semibold text-text-primary">1v1 Tutoring Chat</h1>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button id="clear-history-btn" class="px-4 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                        <i class="fas fa-trash mr-2"></i>
+                        Clear History
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div id="chat-container" class="flex-1 flex flex-col bg-white overflow-hidden">
+            <!-- Chat Messages -->
+            <div id="chatMessages" class="flex-1 p-6 overflow-y-auto space-y-4">
+                <!-- Welcome Message -->
+                {% if not messages %}
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-robot text-white text-sm"></i>
+                    </div>
+                    <div class="chat-bubble-ai max-w-md p-4">
+                        <p class="text-sm">Welcome to your 1v1 tutoring session! I'm here to help you with English learning. How can I assist you today?</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Existing Messages -->
+                {% for message in messages %}
+                {% if message.type == 'user' %}
+                <!-- User Message -->
+                <div class="flex items-start space-x-3 justify-end">
+                    <div class="chat-bubble-user max-w-md p-4">
+                        <p class="text-sm">{{ message.content }}</p>
+                    </div>
+                    <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-user text-white text-sm"></i>
+                    </div>
+                </div>
+                {% else %}
+                <!-- AI Response -->
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-robot text-white text-sm"></i>
+                    </div>
+                    <div class="flex-1 max-w-md">
+                        <div class="chat-bubble-ai p-4">
+                            <p class="text-sm">{{ message.content }}</p>
+                        </div>
+                        {% if message.token_usage %}
+                        <div class="text-xs text-text-secondary mt-1 ml-2">
+                            Token usage: {{ message.token_usage }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+
+                <!-- Typing Indicator -->
+                <div id="typing-indicator" class="flex items-start space-x-3 hidden">
+                    <div class="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-robot text-white text-sm"></i>
+                    </div>
+                    <div class="chat-bubble-ai p-4">
+                        <div class="typing-indicator">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Message Input Area -->
+            <div id="message-input-area" class="px-6 py-4 bg-white border-t border-border-light">
+                <div class="flex items-end space-x-3">
+                    <div class="flex-1">
+                        <textarea 
+                            id="messageInput" 
+                            placeholder="Type your message here..." 
+                            rows="1"
+                            class="w-full px-4 py-3 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                        ></textarea>
+                    </div>
+                    <button id="sendButton" class="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary hover:bg-opacity-90 transition-colors flex-shrink-0">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // User dropdown toggle
+        document.querySelector('#user-menu-btn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            document.querySelector('#user-dropdown').classList.toggle('hidden');
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function() {
+            document.querySelector('#user-dropdown').classList.add('hidden');
+        });
+
+        // Auto-resize textarea
+        const messageInput = document.querySelector('#messageInput');
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+
+        // Send message function
+        function sendMessage() {
+            const input = document.querySelector('#messageInput');
+            const message = input.value.trim();
+            
+            if(message) {
+                // Add user message to chat
+                addUserMessage(message);
+                input.value = '';
+                input.style.height = 'auto';
+                
+                // Show typing indicator
+                showTypingIndicator();
+                
+                // Send to server
+                fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    hideTypingIndicator();
+                    if (data.success) {
+                        addAIMessage(data.response, data.token_usage);
+                    } else {
+                        addAIMessage('Sorry, there was an error processing your request: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    hideTypingIndicator();
+                    addAIMessage('Sorry, there was a connection error. Please try again.');
+                    console.error('Error:', error);
+                });
+            }
+        }
+
+        // Add user message to chat
+        function addUserMessage(message) {
+            const chatMessages = document.querySelector('#chatMessages');
+            const messageElement = document.createElement('div');
+            messageElement.className = 'flex items-start space-x-3 justify-end';
+            messageElement.innerHTML = `
+                <div class="chat-bubble-user max-w-md p-4">
+                    <p class="text-sm">${escapeHtml(message)}</p>
+                </div>
+                <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-user text-white text-sm"></i>
+                </div>
+            `;
+            chatMessages.appendChild(messageElement);
+            scrollToBottom();
+        }
+
+        // Add AI message to chat
+        function addAIMessage(message, tokenUsage = null) {
+            const chatMessages = document.querySelector('#chatMessages');
+            const messageElement = document.createElement('div');
+            messageElement.className = 'flex items-start space-x-3';
+            
+            let tokenInfo = '';
+            if (tokenUsage) {
+                tokenInfo = `<div class="text-xs text-text-secondary mt-1 ml-2">Token usage: ${tokenUsage}</div>`;
+            }
+            
+            messageElement.innerHTML = `
+                <div class="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-robot text-white text-sm"></i>
+                </div>
+                <div class="flex-1 max-w-md">
+                    <div class="chat-bubble-ai p-4">
+                        <p class="text-sm">${escapeHtml(message)}</p>
+                    </div>
+                    ${tokenInfo}
+                </div>
+            `;
+            chatMessages.appendChild(messageElement);
+            scrollToBottom();
+        }
+
+        // Show typing indicator
+        function showTypingIndicator() {
+            document.querySelector('#typing-indicator').classList.remove('hidden');
+            scrollToBottom();
+        }
+
+        // Hide typing indicator
+        function hideTypingIndicator() {
+            document.querySelector('#typing-indicator').classList.add('hidden');
+        }
+
+        // Scroll to bottom of chat
+        function scrollToBottom() {
+            const chatMessages = document.querySelector('#chatMessages');
+            setTimeout(() => {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }, 100);
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Handle key press for sending messages
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Send button click event
+        document.querySelector('#sendButton').addEventListener('click', sendMessage);
+
+        // Enter key to send message (Shift+Enter for new line)
+        document.querySelector('#messageInput').addEventListener('keydown', handleKeyPress);
+
+        // Clear history button
+        document.querySelector('#clear-history-btn').addEventListener('click', function() {
+            if(confirm('Are you sure you want to clear chat history?')) {
+                fetch('/clear_history', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to clear history. Please try again.');
+                });
+            }
+        });
+
+        // Initialize chat - scroll to bottom
+        scrollToBottom();
+    </script>
+</body>
+</html>
