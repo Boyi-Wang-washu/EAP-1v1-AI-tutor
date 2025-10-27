@@ -10,7 +10,7 @@ from functools import wraps
 from database import init_database, init_default_user, verify_user, get_user_by_email
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-change-this'  # 请更改为安全的密钥
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your-secret-key-change-this')  # 从环境变量读取
 
 # 启用 CORS - 允许 Next.js 前端调用
 CORS(app, 
@@ -24,9 +24,9 @@ CORS(app,
      methods=["GET", "POST", "OPTIONS"]
 )
 
-# 配置
-COZE_API_TOKEN = "sat_G9soTeMGzMr6oOmfwSdx80P1mGNCPJ3c7pFOLIyqPvajlvJyOFp5UyBedtgzXQ7s"  # 请替换为你的 Coze API Token
-BOT_ID = "7565215004040527912"  # 请替换为你的 Bot ID
+# 配置 - 支持从环境变量读取（生产环境）
+COZE_API_TOKEN = os.getenv('COZE_API_TOKEN', "sat_G9soTeMGzMr6oOmfwSdx80P1mGNCPJ3c7pFOLIyqPvajlvJyOFp5UyBedtgzXQ7s")
+BOT_ID = os.getenv('BOT_ID', "7565215004040527912")
 
 # 初始化 Coze 客户端
 coze = Coze(auth=TokenAuth(COZE_API_TOKEN), base_url=COZE_CN_BASE_URL)
