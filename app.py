@@ -3,7 +3,8 @@ import json
 import uuid
 import time
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, Response, stream_with_context
+from json import dumps
 from flask_cors import CORS
 from cozepy import Coze, TokenAuth, Message, ChatEventType, COZE_CN_BASE_URL
 from functools import wraps
@@ -287,8 +288,9 @@ def api_health():
     })
 
 @app.route('/api/chat', methods=['POST', 'OPTIONS'])
+@stream_with_context
 def api_chat():
-    """API: 发送消息并获取回复（供 Next.js 调用）"""
+    """API: 发送消息并获取回复（流式响应）"""
     if request.method == 'OPTIONS':
         return '', 204
     
@@ -315,91 +317,105 @@ def api_chat():
         }
         chat_history[user_id].append(user_msg_record)
         
-        # 调用Coze API获取回复
-        bot_response = ""
-        token_usage = 0
-        conversation_id = session.get('conversation_id')
-        
-        # 如果没有conversation_id，先创建一个新的对话
-        if not conversation_id:
-            conversation_id = create_conversation(user_id)
-            if conversation_id:
-                session['conversation_id'] = conversation_id
-        
-        try:
-            # 构建API调用参数
-            chat_params = {
-                'bot_id': BOT_ID,
-                'user_id': user_id,
-                'additional_messages': [
-                    Message.build_user_question_text(user_message),
-                ]
-            }
+        # 流式响应生成器
+        def generate():
+            bot_response = ""
+            token_usage = 0
+            message_id = str(uuid.uuid4())
+            conversation_id = session.get('conversation_id')
             
-            # 如果有conversation_id，添加到参数中
-            if conversation_id:
-                chat_params['conversation_id'] = conversation_id
+            # 如果没有conversation_id，先创建一个新的对话
+            if not conversation_id:
+                conversation_id = create_conversation(user_id)
+                if conversation_id:
+                    session['conversation_id'] = conversation_id
             
-            for event in coze.chat.stream(**chat_params):
-                if event.event == ChatEventType.CONVERSATION_MESSAGE_DELTA:
-                    bot_response += event.message.content
+            try:
+                # 构建API调用参数
+                chat_params = {
+                    'bot_id': BOT_ID,
+                    'user_id': user_id,
+                    'additional_messages': [
+                        Message.build_user_question_text(user_message),
+                    ]
+                }
                 
-                if event.event == ChatEventType.CONVERSATION_CHAT_COMPLETED:
-                    if hasattr(event.chat, 'usage') and hasattr(event.chat.usage, 'token_count'):
-                        token_usage = event.chat.usage.token_count
-                    if not session.get('conversation_id') and hasattr(event.chat, 'conversation_id'):
-                        session['conversation_id'] = event.chat.conversation_id
-        
-        except Exception as e:
-            error_msg = str(e)
-            if "conversation_id" in error_msg and "does not exist" in error_msg:
-                if 'conversation_id' in session:
-                    del session['conversation_id']
+                # 如果有conversation_id，添加到参数中
+                if conversation_id:
+                    chat_params['conversation_id'] = conversation_id
                 
-                # 重新尝试不带conversation_id的请求
-                try:
-                    chat_params = {
-                        'bot_id': BOT_ID,
-                        'user_id': user_id,
-                        'additional_messages': [
-                            Message.build_user_question_text(user_message),
-                        ]
-                    }
+                for event in coze.chat.stream(**chat_params):
+                    if event.event == ChatEventType.CONVERSATION_MESSAGE_DELTA:
+                        bot_response += event.message.content
+                        # 实时发送增量内容
+                        yield f"data: {dumps({'chunk': event.message.content, 'type': 'delta'})}\n\n"
                     
-                    for event in coze.chat.stream(**chat_params):
-                        if event.event == ChatEventType.CONVERSATION_MESSAGE_DELTA:
-                            bot_response += event.message.content
-                        
-                        if event.event == ChatEventType.CONVERSATION_CHAT_COMPLETED:
-                            if hasattr(event.chat, 'usage') and hasattr(event.chat.usage, 'token_count'):
-                                token_usage = event.chat.usage.token_count
-                            if hasattr(event.chat, 'id'):
-                                session['conversation_id'] = str(event.chat.id)
+                    if event.event == ChatEventType.CONVERSATION_CHAT_COMPLETED:
+                        if hasattr(event.chat, 'usage') and hasattr(event.chat.usage, 'token_count'):
+                            token_usage = event.chat.usage.token_count
+                        if not session.get('conversation_id') and hasattr(event.chat, 'conversation_id'):
+                            session['conversation_id'] = event.chat.conversation_id
                 
-                except Exception as retry_e:
-                    bot_response = f"抱歉，我遇到了一些问题：{str(retry_e)}"
-            else:
-                bot_response = f"抱歉，我遇到了一些问题：{error_msg}"
+                # 发送完成信号
+                yield f"data: {dumps({'type': 'complete', 'token_usage': token_usage, 'message_id': message_id})}\n\n"
+                
+                # 保存机器人回复到历史
+                bot_msg_record = {
+                    'id': message_id,
+                    'type': 'bot',
+                    'content': bot_response,
+                    'timestamp': datetime.now().isoformat(),
+                    'token_usage': token_usage
+                }
+                chat_history[user_id].append(bot_msg_record)
+                save_chat_history(chat_history)
+                
+            except Exception as e:
+                error_msg = str(e)
+                if "conversation_id" in error_msg and "does not exist" in error_msg:
+                    if 'conversation_id' in session:
+                        del session['conversation_id']
+                    
+                    # 重新尝试不带conversation_id的请求
+                    try:
+                        chat_params = {
+                            'bot_id': BOT_ID,
+                            'user_id': user_id,
+                            'additional_messages': [
+                                Message.build_user_question_text(user_message),
+                            ]
+                        }
+                        
+                        for event in coze.chat.stream(**chat_params):
+                            if event.event == ChatEventType.CONVERSATION_MESSAGE_DELTA:
+                                bot_response += event.message.content
+                                yield f"data: {dumps({'chunk': event.message.content, 'type': 'delta'})}\n\n"
+                            
+                            if event.event == ChatEventType.CONVERSATION_CHAT_COMPLETED:
+                                if hasattr(event.chat, 'usage') and hasattr(event.chat.usage, 'token_count'):
+                                    token_usage = event.chat.usage.token_count
+                                if hasattr(event.chat, 'id'):
+                                    session['conversation_id'] = str(event.chat.id)
+                        
+                        yield f"data: {dumps({'type': 'complete', 'token_usage': token_usage, 'message_id': message_id})}\n\n"
+                        
+                        bot_msg_record = {
+                            'id': message_id,
+                            'type': 'bot',
+                            'content': bot_response,
+                            'timestamp': datetime.now().isoformat(),
+                            'token_usage': token_usage
+                        }
+                        chat_history[user_id].append(bot_msg_record)
+                        save_chat_history(chat_history)
+                    
+                    except Exception as retry_e:
+                        error_msg = f"抱歉，我遇到了一些问题：{str(retry_e)}"
+                        yield f"data: {dumps({'error': error_msg, 'type': 'complete'})}\n\n"
+                else:
+                    yield f"data: {dumps({'error': error_msg, 'type': 'complete'})}\n\n"
         
-        # 保存机器人回复
-        bot_msg_record = {
-            'id': str(uuid.uuid4()),
-            'type': 'bot',
-            'content': bot_response,
-            'timestamp': datetime.now().isoformat(),
-            'token_usage': token_usage
-        }
-        chat_history[user_id].append(bot_msg_record)
-        
-        # 保存到文件
-        save_chat_history(chat_history)
-        
-        return jsonify({
-            'success': True,
-            'response': bot_response,
-            'token_usage': token_usage,
-            'message_id': bot_msg_record['id']
-        })
+        return Response(generate(), mimetype='text/event-stream')
         
     except Exception as e:
         return jsonify({'error': f'服务器错误：{str(e)}'}), 500
